@@ -50,6 +50,19 @@ sqlite.exec(`
   INSERT OR IGNORE INTO settings (id, goal_hours, goal_date) VALUES (1, 500, '2026-12-31');
 `);
 
+// Create resources table if it doesn't exist
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS resources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    url TEXT,
+    description TEXT,
+    type TEXT NOT NULL DEFAULT 'link' CHECK(type IN ('link', 'kurs', 'buch', 'video', 'sonstiges')),
+    topic_id INTEGER REFERENCES topics(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
 // Add issue_id column to sessions if it doesn't exist yet (safe migration)
 try {
   sqlite.exec(`ALTER TABLE sessions ADD COLUMN issue_id INTEGER REFERENCES issues(id) ON DELETE SET NULL;`);
