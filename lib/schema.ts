@@ -35,10 +35,22 @@ export const issues = sqliteTable("issues", {
   resolvedAt: text("resolved_at"),
 });
 
+export const resources = sqliteTable("resources", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  title: text("title").notNull(),
+  url: text("url"),
+  description: text("description"),
+  type: text("type", { enum: ["link", "kurs", "buch", "video", "sonstiges"] }).notNull().default("link"),
+  topicId: integer("topic_id").references(() => topics.id, { onDelete: "set null" }),
+  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
+});
+
 export type Settings = typeof settings.$inferSelect;
 export type Topic = typeof topics.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type Issue = typeof issues.$inferSelect;
+export type Resource = typeof resources.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type NewIssue = typeof issues.$inferInsert;
 export type NewTopic = typeof topics.$inferInsert;
+export type NewResource = typeof resources.$inferInsert;
