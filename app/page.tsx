@@ -98,7 +98,7 @@ export default async function Dashboard() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-slate-900">Dashboard</h1>
         <p className="text-slate-500 mt-1">
-          {new Date().toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}
+          {new Date().toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" })}
         </p>
       </div>
 
