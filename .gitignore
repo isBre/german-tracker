@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local database
+german-tracker.db
+german-tracker.db-shm
+german-tracker.db-wal
+
+# Claude Code local files
+.claude/
