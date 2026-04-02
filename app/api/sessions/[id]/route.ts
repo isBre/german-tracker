@@ -6,9 +6,10 @@ import { eq } from "drizzle-orm";
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await req.json();
-  const { endTime, durationMinutes, topicId, issueId, notes } = body;
+  const { startTime, endTime, durationMinutes, topicId, issueId, notes } = body;
 
   await db.update(sessions).set({
+    ...(startTime !== undefined && { startTime }),
     endTime: endTime ?? null,
     durationMinutes: durationMinutes ?? null,
     topicId: topicId ?? null,

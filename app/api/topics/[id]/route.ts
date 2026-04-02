@@ -6,9 +6,13 @@ import { eq } from "drizzle-orm";
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const body = await req.json();
-  const { name, color } = body;
+  const { name, color, categories } = body;
 
-  await db.update(topics).set({ name, color }).where(eq(topics.id, parseInt(id)));
+  await db.update(topics).set({
+    name,
+    color,
+    categories: categories?.length ? JSON.stringify(categories) : null,
+  }).where(eq(topics.id, parseInt(id)));
   const updated = await db.select().from(topics).where(eq(topics.id, parseInt(id)));
   return NextResponse.json(updated[0]);
 }

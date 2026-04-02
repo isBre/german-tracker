@@ -41,6 +41,13 @@ const PRIORITY_LABELS = {
   high: "Hoch",
 };
 
+const XIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
 function fmtDate(str: string) {
   return new Date(str).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -61,6 +68,14 @@ export default function IssuesClient({
   const [newPriority, setNewPriority] = useState<"low" | "medium" | "high">("medium");
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // Edit modal state
+  const [editingIssue, setEditingIssue] = useState<IssueRow | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editTopicId, setEditTopicId] = useState("");
+  const [editPriority, setEditPriority] = useState<"low" | "medium" | "high">("medium");
+  const [editSaving, setEditSaving] = useState(false);
 
   const createIssue = async () => {
     if (!newTitle.trim()) return;
@@ -105,6 +120,39 @@ export default function IssuesClient({
     setIssues((prev) => prev.filter((i) => i.id !== id));
   };
 
+  const openEdit = (issue: IssueRow) => {
+    setEditingIssue(issue);
+    setEditTitle(issue.title);
+    setEditDescription(issue.description ?? "");
+    setEditTopicId(issue.topicId ? String(issue.topicId) : "");
+    setEditPriority(issue.priority);
+  };
+
+  const saveEdit = async () => {
+    if (!editingIssue || !editTitle.trim()) return;
+    setEditSaving(true);
+    await fetch(`/api/issues/${editingIssue.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: editTitle.trim(),
+        description: editDescription || null,
+        topicId: editTopicId ? parseInt(editTopicId) : null,
+        priority: editPriority,
+      }),
+    });
+    const topic = topics.find((t) => t.id === (editTopicId ? parseInt(editTopicId) : null));
+    setIssues((prev) =>
+      prev.map((i) =>
+        i.id === editingIssue.id
+          ? { ...i, title: editTitle.trim(), description: editDescription || null, topicId: editTopicId ? parseInt(editTopicId) : null, topicName: topic?.name ?? null, topicColor: topic?.color ?? null, priority: editPriority }
+          : i
+      )
+    );
+    setEditSaving(false);
+    setEditingIssue(null);
+  };
+
   const filtered = filterStatus === "all" ? issues : issues.filter((i) => i.status === filterStatus);
   const counts = {
     all: issues.length,
@@ -128,17 +176,14 @@ export default function IssuesClient({
         </button>
       </div>
 
-      {/* Modal */}
+      {/* Create modal */}
       {showNew && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-xl w-full max-w-lg p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-semibold text-slate-900">Neues Problem</h2>
               <button onClick={() => setShowNew(false)} className="text-slate-400 hover:text-slate-600">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+                <XIcon />
               </button>
             </div>
             <div className="flex flex-col gap-4">
@@ -195,6 +240,78 @@ export default function IssuesClient({
                 </button>
                 <button
                   onClick={() => setShowNew(false)}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editingIssue && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-semibold text-slate-900">Problem bearbeiten</h2>
+              <button onClick={() => setEditingIssue(null)} className="text-slate-400 hover:text-slate-600">
+                <XIcon />
+              </button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs text-slate-500 mb-1.5 block">Titel *</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  autoFocus
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1.5 block">Beschreibung</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={3}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Thema</label>
+                  <Select value={editTopicId} onChange={(e) => setEditTopicId(e.target.value)}>
+                    <option value="">Kein Thema</option>
+                    {topics.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Priorität</label>
+                  <Select
+                    value={editPriority}
+                    onChange={(e) => setEditPriority(e.target.value as "low" | "medium" | "high")}
+                  >
+                    <option value="low">Niedrig</option>
+                    <option value="medium">Mittel</option>
+                    <option value="high">Hoch</option>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={saveEdit}
+                  disabled={editSaving || !editTitle.trim()}
+                  className="flex-1 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-40"
+                >
+                  {editSaving ? "Wird gespeichert…" : "Speichern"}
+                </button>
+                <button
+                  onClick={() => setEditingIssue(null)}
                   className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
                 >
                   Abbrechen
@@ -282,12 +399,20 @@ export default function IssuesClient({
                             {STATUS_LABELS[s]}
                           </button>
                         ))}
-                      <button
-                        onClick={() => deleteIssue(issue.id)}
-                        className="ml-auto text-xs text-slate-400 hover:text-red-500 transition-colors"
-                      >
-                        Löschen
-                      </button>
+                      <div className="ml-auto flex items-center gap-3">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openEdit(issue); }}
+                          className="text-xs text-slate-400 hover:text-slate-700 transition-colors"
+                        >
+                          Bearbeiten
+                        </button>
+                        <button
+                          onClick={() => deleteIssue(issue.id)}
+                          className="text-xs text-slate-400 hover:text-red-500 transition-colors"
+                        >
+                          Löschen
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}

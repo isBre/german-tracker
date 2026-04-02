@@ -70,17 +70,18 @@ try {
   // Column already exists, ignore
 }
 
-sqlite.exec(`
+// Add category column to topics if it doesn't exist yet (safe migration)
+try {
+  sqlite.exec(`ALTER TABLE topics ADD COLUMN category TEXT CHECK(category IN ('sprechen', 'schreiben', 'hören', 'lesen'));`);
+} catch {
+  // Column already exists, ignore
+}
 
-  INSERT OR IGNORE INTO topics (id, name, color, created_at) VALUES
-    (1, 'Anki – Vokabeln', '#8b5cf6', datetime('now')),
-    (2, 'Grammatik', '#3b82f6', datetime('now')),
-    (3, 'Hören', '#22c55e', datetime('now')),
-    (4, 'Sprechen', '#f97316', datetime('now')),
-    (5, 'Lesen', '#14b8a6', datetime('now')),
-    (6, 'Schreiben', '#ec4899', datetime('now')),
-    (7, 'Kurs', '#eab308', datetime('now')),
-    (8, 'Aussprache', '#6366f1', datetime('now'));
-`);
+// Add categories (JSON array) column to topics if it doesn't exist yet (safe migration)
+try {
+  sqlite.exec(`ALTER TABLE topics ADD COLUMN categories TEXT;`);
+} catch {
+  // Column already exists, ignore
+}
 
 export const db = drizzle(sqlite, { schema });

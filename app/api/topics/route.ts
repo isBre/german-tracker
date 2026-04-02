@@ -10,7 +10,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { name, color } = body;
+  const { name, color, categories } = body;
 
   if (!name?.trim()) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -19,6 +19,7 @@ export async function POST(req: Request) {
   const result = await db.insert(topics).values({
     name: name.trim(),
     color: color ?? "#3b82f6",
+    categories: categories?.length ? JSON.stringify(categories) : null,
     createdAt: new Date().toISOString(),
   }).returning();
 

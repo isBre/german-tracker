@@ -44,6 +44,13 @@ const TIMER_KEY = "gt_timer_start";
 
 type LinkType = "topic" | "problem";
 
+const XIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
 export default function SessionsClient({
   initialSessions,
   topics,
@@ -75,6 +82,17 @@ export default function SessionsClient({
   const [manualIssueId, setManualIssueId] = useState("");
   const [manualNotes, setManualNotes] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Edit modal state
+  const [editingSession, setEditingSession] = useState<SessionRow | null>(null);
+  const [editDate, setEditDate] = useState("");
+  const [editHours, setEditHours] = useState("");
+  const [editMinutes, setEditMinutes] = useState("");
+  const [editLinkType, setEditLinkType] = useState<LinkType>("topic");
+  const [editTopicId, setEditTopicId] = useState("");
+  const [editIssueId, setEditIssueId] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -175,6 +193,47 @@ export default function SessionsClient({
   const deleteSession = async (id: number) => {
     await fetch(`/api/sessions/${id}`, { method: "DELETE" });
     setSessions((prev) => prev.filter((s) => s.id !== id));
+  };
+
+  const openEdit = (s: SessionRow) => {
+    const date = new Date(s.startTime).toISOString().split("T")[0];
+    const totalMins = s.durationMinutes ?? 0;
+    const h = Math.floor(totalMins / 60);
+    const m = Math.round(totalMins % 60);
+    setEditingSession(s);
+    setEditDate(date);
+    setEditHours(h > 0 ? String(h) : "");
+    setEditMinutes(m > 0 ? String(m) : "");
+    setEditLinkType(s.issueId ? "problem" : "topic");
+    setEditTopicId(s.topicId ? String(s.topicId) : "");
+    setEditIssueId(s.issueId ? String(s.issueId) : "");
+    setEditNotes(s.notes ?? "");
+  };
+
+  const saveEdit = async () => {
+    if (!editingSession) return;
+    const h = parseFloat(editHours || "0");
+    const m = parseFloat(editMinutes || "0");
+    const totalMinutes = h * 60 + m;
+    if (totalMinutes <= 0) return;
+    setEditSaving(true);
+    const startTime = new Date(editDate + "T09:00:00").toISOString();
+    const endTime = new Date(new Date(startTime).getTime() + totalMinutes * 60 * 1000).toISOString();
+    await fetch(`/api/sessions/${editingSession.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startTime,
+        endTime,
+        durationMinutes: totalMinutes,
+        topicId: editLinkType === "topic" && editTopicId ? parseInt(editTopicId) : null,
+        issueId: editLinkType === "problem" && editIssueId ? parseInt(editIssueId) : null,
+        notes: editNotes || null,
+      }),
+    });
+    setSessions(await (await fetch("/api/sessions")).json());
+    setEditSaving(false);
+    setEditingSession(null);
   };
 
   const completed = sessions.filter((s) => s.endTime && s.durationMinutes);
@@ -349,6 +408,105 @@ export default function SessionsClient({
         )}
       </div>
 
+      {/* Edit modal */}
+      {editingSession && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-semibold text-slate-900">Einheit bearbeiten</h2>
+              <button onClick={() => setEditingSession(null)} className="text-slate-400 hover:text-slate-600">
+                <XIcon />
+              </button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Datum</label>
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Verknüpfen mit</label>
+                  <div className="flex rounded-lg border border-slate-200 overflow-hidden w-fit">
+                    <button
+                      onClick={() => setEditLinkType("topic")}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${editLinkType === "topic" ? "bg-slate-900 text-white" : "bg-white text-slate-500 hover:text-slate-900"}`}
+                    >
+                      Thema
+                    </button>
+                    <button
+                      onClick={() => setEditLinkType("problem")}
+                      className={`px-3 py-1.5 text-xs font-medium transition-colors ${editLinkType === "problem" ? "bg-slate-900 text-white" : "bg-white text-slate-500 hover:text-slate-900"}`}
+                    >
+                      Problem
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Stunden</label>
+                  <input
+                    type="number" min="0" placeholder="0" value={editHours}
+                    onChange={(e) => setEditHours(e.target.value)}
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Minuten</label>
+                  <input
+                    type="number" min="0" max="59" placeholder="0" value={editMinutes}
+                    onChange={(e) => setEditMinutes(e.target.value)}
+                    className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="text-xs text-slate-500 mb-1.5 block">
+                    {editLinkType === "topic" ? "Thema (optional)" : "Problem (optional)"}
+                  </label>
+                  {editLinkType === "topic" ? (
+                    <Select value={editTopicId} onChange={(e) => setEditTopicId(e.target.value)}>
+                      <option value="">Kein Thema</option>
+                      {topics.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </Select>
+                  ) : (
+                    <Select value={editIssueId} onChange={(e) => setEditIssueId(e.target.value)}>
+                      <option value="">Kein Problem</option>
+                      {issues.map((i) => <option key={i.id} value={i.id}>{i.title}</option>)}
+                    </Select>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1.5 block">Notiz (optional)</label>
+                <input
+                  type="text" placeholder="Was hast du gelernt?" value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={saveEdit}
+                  disabled={editSaving || (!editHours && !editMinutes)}
+                  className="flex-1 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-40"
+                >
+                  {editSaving ? "Wird gespeichert…" : "Speichern"}
+                </button>
+                <button
+                  onClick={() => setEditingSession(null)}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* History */}
       <div className="bg-white rounded-xl border border-slate-100">
         <div className="px-6 py-4 border-b border-slate-100">
@@ -379,8 +537,18 @@ export default function SessionsClient({
                   </div>
                   {s.notes && <p className="text-xs text-slate-400 mt-0.5">{s.notes}</p>}
                 </div>
-                <div className="flex items-center gap-4 shrink-0">
+                <div className="flex items-center gap-3 shrink-0">
                   <span className="text-sm font-semibold text-slate-900">{fmtMinutes(s.durationMinutes ?? 0)}</span>
+                  <button
+                    onClick={() => openEdit(s)}
+                    className="text-slate-300 hover:text-slate-600 transition-colors opacity-0 group-hover:opacity-100"
+                    title="Bearbeiten"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                    </svg>
+                  </button>
                   <button
                     onClick={() => deleteSession(s.id)}
                     className="text-slate-300 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100"

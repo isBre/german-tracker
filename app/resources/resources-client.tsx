@@ -39,6 +39,13 @@ const TYPE_STYLES: Record<string, string> = {
   sonstiges: "bg-slate-100 text-slate-600",
 };
 
+const XIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+
 function fmtDate(str: string) {
   return new Date(str).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
@@ -60,6 +67,15 @@ export default function ResourcesClient({
   const [newTopicId, setNewTopicId] = useState("");
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // Edit modal state
+  const [editingResource, setEditingResource] = useState<ResourceRow | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editUrl, setEditUrl] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editType, setEditType] = useState<ResourceRow["type"]>("link");
+  const [editTopicId, setEditTopicId] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   const createResource = async () => {
     if (!newTitle.trim()) return;
@@ -92,6 +108,41 @@ export default function ResourcesClient({
     setResources((prev) => prev.filter((r) => r.id !== id));
   };
 
+  const openEdit = (resource: ResourceRow) => {
+    setEditingResource(resource);
+    setEditTitle(resource.title);
+    setEditUrl(resource.url ?? "");
+    setEditDescription(resource.description ?? "");
+    setEditType(resource.type);
+    setEditTopicId(resource.topicId ? String(resource.topicId) : "");
+  };
+
+  const saveEdit = async () => {
+    if (!editingResource || !editTitle.trim()) return;
+    setEditSaving(true);
+    await fetch(`/api/resources/${editingResource.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: editTitle.trim(),
+        url: editUrl || null,
+        description: editDescription || null,
+        type: editType,
+        topicId: editTopicId ? parseInt(editTopicId) : null,
+      }),
+    });
+    const topic = topics.find((t) => t.id === (editTopicId ? parseInt(editTopicId) : null));
+    setResources((prev) =>
+      prev.map((r) =>
+        r.id === editingResource.id
+          ? { ...r, title: editTitle.trim(), url: editUrl || null, description: editDescription || null, type: editType, topicId: editTopicId ? parseInt(editTopicId) : null, topicName: topic?.name ?? null }
+          : r
+      )
+    );
+    setEditSaving(false);
+    setEditingResource(null);
+  };
+
   const filtered = filterType === "all" ? resources : resources.filter((r) => r.type === filterType);
 
   const counts: Record<string, number> = { all: resources.length };
@@ -114,17 +165,14 @@ export default function ResourcesClient({
         </button>
       </div>
 
-      {/* Modal */}
+      {/* Create modal */}
       {showNew && (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl border border-slate-100 shadow-xl w-full max-w-lg p-6">
             <div className="flex items-center justify-between mb-5">
               <h2 className="text-base font-semibold text-slate-900">Neue Ressource</h2>
               <button onClick={() => setShowNew(false)} className="text-slate-400 hover:text-slate-600">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
+                <XIcon />
               </button>
             </div>
             <div className="flex flex-col gap-4">
@@ -188,6 +236,85 @@ export default function ResourcesClient({
                 </button>
                 <button
                   onClick={() => setShowNew(false)}
+                  className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit modal */}
+      {editingResource && (
+        <div className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl border border-slate-100 shadow-xl w-full max-w-lg p-6">
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-base font-semibold text-slate-900">Ressource bearbeiten</h2>
+              <button onClick={() => setEditingResource(null)} className="text-slate-400 hover:text-slate-600">
+                <XIcon />
+              </button>
+            </div>
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs text-slate-500 mb-1.5 block">Titel *</label>
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  autoFocus
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1.5 block">URL</label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={editUrl}
+                  onChange={(e) => setEditUrl(e.target.value)}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 mb-1.5 block">Beschreibung</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={2}
+                  className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-slate-900 resize-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Typ</label>
+                  <Select value={editType} onChange={(e) => setEditType(e.target.value as ResourceRow["type"])}>
+                    {Object.entries(TYPE_LABELS).map(([val, label]) => (
+                      <option key={val} value={val}>{label}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 mb-1.5 block">Thema</label>
+                  <Select value={editTopicId} onChange={(e) => setEditTopicId(e.target.value)}>
+                    <option value="">Kein Thema</option>
+                    {topics.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </Select>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={saveEdit}
+                  disabled={editSaving || !editTitle.trim()}
+                  className="flex-1 py-2 bg-slate-900 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-40"
+                >
+                  {editSaving ? "Wird gespeichert…" : "Speichern"}
+                </button>
+                <button
+                  onClick={() => setEditingResource(null)}
                   className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors"
                 >
                   Abbrechen
@@ -286,10 +413,16 @@ export default function ResourcesClient({
                         {resource.url}
                       </a>
                     )}
-                    <div className="flex items-center gap-2 mt-2">
+                    <div className="flex items-center gap-3 mt-2">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openEdit(resource); }}
+                        className="text-xs text-slate-400 hover:text-slate-700 transition-colors"
+                      >
+                        Bearbeiten
+                      </button>
                       <button
                         onClick={() => deleteResource(resource.id)}
-                        className="ml-auto text-xs text-slate-400 hover:text-red-500 transition-colors"
+                        className="text-xs text-slate-400 hover:text-red-500 transition-colors"
                       >
                         Löschen
                       </button>

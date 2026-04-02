@@ -10,6 +10,8 @@ export const topics = sqliteTable("topics", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   name: text("name").notNull(),
   color: text("color").notNull().default("#3b82f6"),
+  category: text("category", { enum: ["sprechen", "schreiben", "hören", "lesen"] }),
+  categories: text("categories"), // JSON array e.g. '["hören","lesen"]'
   createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
