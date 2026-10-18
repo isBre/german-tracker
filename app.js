@@ -1,6 +1,6 @@
 import { db } from './db.js';
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 // ---------- le 4 abilità ----------
 const SKILLS = {
@@ -12,18 +12,19 @@ const SKILLS = {
 const SKILL_KEYS = Object.keys(SKILLS);
 
 const DEFAULT_METHODS = [
-  { name: 'Anki', skill: 'lettura' },
-  { name: 'Nicos Weg', skill: 'ascolto' },
-  { name: 'Easy German', skill: 'ascolto' },
-  { name: 'Serie / Film', skill: 'ascolto' },
-  { name: 'Podcast', skill: 'ascolto' },
-  { name: 'Notizie / Lettura', skill: 'lettura' },
-  { name: 'Grammatica', skill: 'scrittura' },
-  { name: 'Diario / Scrittura', skill: 'scrittura' },
-  { name: 'Chat con AI', skill: 'scrittura' },
-  { name: 'Conversazione', skill: 'parlato' },
-  { name: 'Voce con AI', skill: 'parlato' },
-  { name: 'Shadowing', skill: 'parlato' },
+  { name: 'Duolingo', skills: ['ascolto', 'lettura', 'scrittura'] },
+  { name: 'Anki', skills: ['lettura'] },
+  { name: 'Nicos Weg', skills: ['ascolto', 'lettura'] },
+  { name: 'Easy German', skills: ['ascolto'] },
+  { name: 'Serie / Film', skills: ['ascolto'] },
+  { name: 'Podcast', skills: ['ascolto'] },
+  { name: 'Notizie / Lettura', skills: ['lettura'] },
+  { name: 'Grammatica', skills: ['scrittura'] },
+  { name: 'Diario / Scrittura', skills: ['scrittura'] },
+  { name: 'Chat con AI', skills: ['scrittura', 'lettura'] },
+  { name: 'Conversazione', skills: ['parlato', 'ascolto'] },
+  { name: 'Voce con AI', skills: ['parlato', 'ascolto'] },
+  { name: 'Shadowing', skills: ['parlato', 'ascolto'] },
 ];
 
 const CHECK_QUESTIONS = [
@@ -88,13 +89,29 @@ function matchSkill(str) {
   return SKILL_KEYS.find(k => k.startsWith(s.slice(0, 4)) || SKILLS[k].de.toLowerCase().startsWith(s.slice(0, 4))) || null;
 }
 
-function normalizeMethods(list) {
-  return (list || []).map(m => typeof m === 'string' ? { name: m, skill: guessSkill(m) } : m)
-    .filter(m => m && m.name && SKILLS[m.skill]);
+// "ascolto, lettura" -> ['ascolto', 'lettura'] (ordine fisso, niente doppioni)
+function parseSkills(str) {
+  const found = new Set(String(str || '').split(/[,+/]/).map(matchSkill).filter(Boolean));
+  return SKILL_KEYS.filter(k => found.has(k));
 }
 
-const methodSkill = name => state.settings.methods.find(m => m.name === name)?.skill || guessSkill(name);
-const skillOf = s => (SKILLS[s.skill] ? s.skill : methodSkill(s.method));
+const cleanSkills = arr => SKILL_KEYS.filter(k => (arr || []).includes(k));
+
+function normalizeMethods(list) {
+  return (list || []).map(m => {
+    if (typeof m === 'string') return { name: m, skills: [guessSkill(m)] };
+    const skills = cleanSkills(m.skills || (m.skill ? [m.skill] : []));
+    return { name: m.name, skills: skills.length ? skills : [guessSkill(m.name)] };
+  }).filter(m => m.name);
+}
+
+const methodSkills = name => state.settings.methods.find(m => m.name === name)?.skills || [guessSkill(name)];
+// abilità di una sessione: quelle salvate (nuovo formato o vecchio campo singolo), altrimenti quelle del metodo
+function skillsOf(s) {
+  const own = cleanSkills(s.skills || (s.skill ? [s.skill] : []));
+  return own.length ? own : methodSkills(s.method);
+}
+const skillIcons = skills => skills.map(k => SKILLS[k].icon).join('');
 
 // ---------- data ----------
 async function load() {
@@ -199,7 +216,7 @@ function goalInfo() {
 function methodStats() {
   const m = new Map();
   for (const s of state.sessions) {
-    if (!m.has(s.method)) m.set(s.method, { method: s.method, skill: skillOf(s), min: 0, n: 0, enj: 0, lrn: 0, last: null });
+    if (!m.has(s.method)) m.set(s.method, { method: s.method, skills: skillsOf(s), min: 0, n: 0, enj: 0, lrn: 0, last: null });
     const o = m.get(s.method);
     o.min += s.minutes; o.n++; o.enj += s.enjoy || 0; o.lrn += s.learned || 0;
     const d = new Date(s.date);
@@ -210,7 +227,10 @@ function methodStats() {
 
 function skillStats(sessions = state.sessions) {
   const o = Object.fromEntries(SKILL_KEYS.map(k => [k, { k, min: 0, n: 0, lrn: 0 }]));
-  for (const s of sessions) { const x = o[skillOf(s)]; x.min += s.minutes; x.n++; x.lrn += s.learned || 0; }
+  for (const s of sessions) {
+    const ks = skillsOf(s);
+    for (const k of ks) { const x = o[k]; x.min += s.minutes / ks.length; x.n++; x.lrn += s.learned || 0; }
+  }
   const total = sumMin(sessions) || 1;
   return SKILL_KEYS.map(k => ({ ...o[k], share: o[k].min / total, avgLrn: o[k].n ? o[k].lrn / o[k].n : 0 }));
 }
@@ -348,8 +368,8 @@ function skillBarsHTML(stats, showLearn) {
 const ratingHTML = (name, value) => [1, 2, 3, 4, 5].map(n =>
   `<label class="rate"><input type="radio" name="${name}" value="${n}" ${n === value ? 'checked' : ''} required><span>${n}</span></label>`).join('');
 
-const skillPickHTML = value => SKILL_KEYS.map(k =>
-  `<label class="rate"><input type="radio" name="skill" value="${k}" ${k === value ? 'checked' : ''} required><span>${SKILLS[k].icon}<br><small>${SKILLS[k].label}</small></span></label>`).join('');
+const skillPickHTML = values => SKILL_KEYS.map(k =>
+  `<label class="rate"><input type="checkbox" name="skills" value="${k}" ${values.includes(k) ? 'checked' : ''}><span>${SKILLS[k].icon}<br><small>${SKILLS[k].label}</small></span></label>`).join('');
 
 function methodOptions(selected) {
   const names = state.settings.methods.map(m => m.name);
@@ -449,7 +469,7 @@ function renderToday() {
   state.sessions.forEach(s => counts.set(s.method, (counts.get(s.method) || 0) + 1));
   const quick = [...state.settings.methods].sort((a, b) => (counts.get(b.name) || 0) - (counts.get(a.name) || 0)).slice(0, 4);
   $('#quick').innerHTML = `<div class="muted small">Registra al volo 15 min</div>
-    <div class="chips">${quick.map(m => `<button class="chip" data-method="${esc(m.name)}">${SKILLS[m.skill].icon} ${esc(m.name)}</button>`).join('')}</div>`;
+    <div class="chips">${quick.map(m => `<button class="chip" data-method="${esc(m.name)}">${skillIcons(m.skills)} ${esc(m.name)}</button>`).join('')}</div>`;
 
   $('#today-kpis').innerHTML =
     kpi('Oggi', fmtDur(todayMin)) +
@@ -524,7 +544,7 @@ function renderStats() {
     <div class="card"><h2>Metodi</h2>
       <div class="methods">${ms.map(m => `
         <div class="method">
-          <div class="method-head"><b>${SKILLS[m.skill].icon} ${esc(m.method)}</b><span>${fmtH(m.min)} h · ${m.n} sess.</span></div>
+          <div class="method-head"><b>${skillIcons(m.skills)} ${esc(m.method)}</b><span>${fmtH(m.min)} h · ${m.n} sess.</span></div>
           <div class="mbar"><div style="width:${m.min / maxM * 100}%"></div></div>
           <div class="method-scores"><span>Piacere <b>${fmt1(m.avgEnj)}</b></span><span>Apprendimento <b>${fmt1(m.avgLrn)}</b></span><span class="muted">ultima: ${daysSince(m.last) === 0 ? 'oggi' : daysSince(m.last) + ' gg fa'}</span></div>
         </div>`).join('')}</div>
@@ -568,7 +588,7 @@ function renderHistory() {
       <div class="day-head"><span>${fmtDayLong(new Date(k + 'T12:00:00'))}</span><span>${fmtDur(sumMin(list))}</span></div>
       ${list.map(s => `
         <button class="sess" data-id="${s.id}">
-          <div class="sess-main"><b>${SKILLS[skillOf(s)].icon} ${esc(s.method)}</b><span>${fmtTime(new Date(s.date))} · ${fmtDur(s.minutes)}</span></div>
+          <div class="sess-main"><b>${skillIcons(skillsOf(s))} ${esc(s.method)}</b><span>${fmtTime(new Date(s.date))} · ${fmtDur(s.minutes)}</span></div>
           <div class="sess-sub"><span>Piacere ${s.enjoy}/5 · Appr. ${s.learned}/5</span>${s.note ? `<span class="note">${esc(s.note)}</span>` : ''}</div>
         </button>`).join('')}
     </div>`).join('');
@@ -581,7 +601,7 @@ function renderSettings() {
   f.weeklyTarget.value = state.settings.weeklyTarget;
   f.dailyGoal.value = state.settings.dailyGoal;
   f.streakMin.value = state.settings.streakMin;
-  f.methods.value = state.settings.methods.map(m => `${m.name} = ${SKILLS[m.skill].label.toLowerCase()}`).join('\n');
+  f.methods.value = state.settings.methods.map(m => `${m.name} = ${m.skills.map(k => SKILLS[k].label.toLowerCase()).join(', ')}`).join('\n');
   $('#backup-info').textContent = state.lastExport
     ? `Ultimo backup: ${fmtDate(new Date(state.lastExport))}. I dati vivono solo su questo dispositivo.`
     : 'Nessun backup ancora. I dati vivono solo su questo dispositivo: esportali ogni tanto in File o iCloud Drive.';
@@ -625,7 +645,7 @@ function openSessionDialog(s = {}, isEdit = false) {
   const method = s.method || $('#timer-method').value;
   $('#session-title').textContent = isEdit ? 'Modifica sessione' : 'Nuova sessione';
   $('#f-method').innerHTML = methodOptions(method);
-  $('#f-skill').innerHTML = skillPickHTML(isEdit ? skillOf(s) : methodSkill(method));
+  $('#f-skill').innerHTML = skillPickHTML(isEdit ? skillsOf(s) : methodSkills(method));
   const minutes = s.minutes || 30;
   f.date.value = toLocalInput(s.date || new Date(Date.now() - minutes * 60000));
   f.minutes.value = minutes;
@@ -633,6 +653,7 @@ function openSessionDialog(s = {}, isEdit = false) {
   $('#f-learned').innerHTML = ratingHTML('learned', s.learned || 3);
   f.note.value = s.note || '';
   $('#f-delete').hidden = !isEdit;
+  $('#f-skill-err').hidden = true;
   $('#session-dialog').showModal();
 }
 
@@ -641,10 +662,12 @@ async function submitSession(e) {
   const f = e.target;
   const minutes = parseInt(f.minutes.value, 10);
   if (!(minutes > 0)) return;
+  const skills = cleanSkills(new FormData(f).getAll('skills'));
+  if (!skills.length) { $('#f-skill-err').hidden = false; return; }
   await saveSession({
     id: editingId || uid(),
     method: f.method.value,
-    skill: f.skill.value,
+    skills,
     date: new Date(f.date.value).toISOString(),
     minutes,
     enjoy: parseInt(f.enjoy.value, 10),
@@ -750,7 +773,7 @@ async function init() {
   });
 
   $('#session-form').addEventListener('submit', submitSession);
-  $('#f-method').addEventListener('change', e => { $('#f-skill').innerHTML = skillPickHTML(methodSkill(e.target.value)); });
+  $('#f-method').addEventListener('change', e => { $('#f-skill').innerHTML = skillPickHTML(methodSkills(e.target.value)); });
   $('#f-cancel').addEventListener('click', () => $('#session-dialog').close());
   $('#f-delete').addEventListener('click', async () => {
     if (editingId && confirm('Eliminare questa sessione?')) { await deleteSession(editingId); $('#session-dialog').close(); }
@@ -770,11 +793,12 @@ async function init() {
     const f = e.target;
     const seen = new Set();
     const methods = f.methods.value.split('\n').map(line => {
-      const [name, skill] = line.split('=');
+      const [name, skillStr] = line.split('=');
       const n = (name || '').trim();
       if (!n || seen.has(n)) return null;
       seen.add(n);
-      return { name: n, skill: matchSkill(skill || '') || guessSkill(n) };
+      const skills = parseSkills(skillStr);
+      return { name: n, skills: skills.length ? skills : [guessSkill(n)] };
     }).filter(Boolean);
     const num = (v, d) => { const x = parseFloat(String(v).replace(',', '.')); return x > 0 ? x : d; };
     state.settings = {

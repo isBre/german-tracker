@@ -56,7 +56,7 @@
         </div>
         <p class="muted small">La streak conta i giorni con almeno il minimo. Ogni 7 giorni di fila guadagni un 🧊 freeze (max 2), che salva la streak in automatico se salti un giorno.</p>
         <h2>Metodi</h2>
-        <label>Uno per riga, nel formato <b>Nome = abilità</b> (ascolto, lettura, scrittura, parlato)<textarea name="methods" rows="10"></textarea></label>
+        <label>Uno per riga: <b>Nome = abilità</b>, anche più di una separate da virgola (es. <i>Duolingo = ascolto, lettura, scrittura</i>)<textarea name="methods" rows="10"></textarea></label>
         <button class="btn primary" type="submit">Salva</button>
       </form>
 
@@ -99,7 +99,7 @@
     <form id="session-form">
       <h2 id="session-title">Nuova sessione</h2>
       <label>Metodo<select name="method" id="f-method"></select></label>
-      <fieldset><legend>Abilità allenata</legend><div class="skillpick" id="f-skill"></div></fieldset>
+      <fieldset><legend>Abilità allenate (anche più di una: il tempo si divide tra quelle scelte)</legend><div class="skillpick" id="f-skill"></div><p class="err small" id="f-skill-err" hidden>Scegli almeno un'abilità.</p></fieldset>
       <div class="row2">
         <label>Quando<input type="datetime-local" name="date" required></label>
         <label>Minuti<input type="number" name="minutes" min="1" max="720" inputmode="numeric" required></label>
