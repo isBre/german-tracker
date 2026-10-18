@@ -1,10 +1,29 @@
 import { db } from './db.js';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
+
+// ---------- le 4 abilità ----------
+const SKILLS = {
+  ascolto:   { label: 'Ascolto',   de: 'Hören',     icon: '🎧' },
+  lettura:   { label: 'Lettura',   de: 'Lesen',     icon: '📖' },
+  scrittura: { label: 'Scrittura', de: 'Schreiben', icon: '✍️' },
+  parlato:   { label: 'Parlato',   de: 'Sprechen',  icon: '🗣️' },
+};
+const SKILL_KEYS = Object.keys(SKILLS);
 
 const DEFAULT_METHODS = [
-  'Anki', 'Nicos Weg', 'Easy German', 'Serie / Film', 'Conversazione',
-  'Grammatica', 'Lettura', 'Podcast', 'Scrittura',
+  { name: 'Anki', skill: 'lettura' },
+  { name: 'Nicos Weg', skill: 'ascolto' },
+  { name: 'Easy German', skill: 'ascolto' },
+  { name: 'Serie / Film', skill: 'ascolto' },
+  { name: 'Podcast', skill: 'ascolto' },
+  { name: 'Notizie / Lettura', skill: 'lettura' },
+  { name: 'Grammatica', skill: 'scrittura' },
+  { name: 'Diario / Scrittura', skill: 'scrittura' },
+  { name: 'Chat con AI', skill: 'scrittura' },
+  { name: 'Conversazione', skill: 'parlato' },
+  { name: 'Voce con AI', skill: 'parlato' },
+  { name: 'Shadowing', skill: 'parlato' },
 ];
 
 const CHECK_QUESTIONS = [
@@ -16,9 +35,15 @@ const CHECK_QUESTIONS = [
   "Scrivo un messaggio a un amico senza tradurre dall'italiano",
 ];
 
-const DEFAULTS = { goalLabel: 'B1', goalHours: 350, weeklyTarget: 6, methods: DEFAULT_METHODS };
+const DEFAULTS = {
+  goalLabel: 'B1', goalHours: 350, weeklyTarget: 6,
+  dailyGoal: 20, streakMin: 10, methods: DEFAULT_METHODS,
+};
 const TITLES = { today: 'Oggi', stats: 'Statistiche', history: 'Storico', settings: 'Impostazioni' };
 const DAY = 86400000;
+const MAX_FREEZE = 2;
+const HOUR_MILESTONES = [1, 5, 10, 25, 50, 75, 100, 150, 200, 250, 300, 350, 400, 500, 600, 700, 800, 1000];
+const STREAK_MILESTONES = [3, 7, 14, 21, 30, 50, 75, 100, 150, 200, 365, 500];
 
 const state = { sessions: [], checkpoints: [], settings: { ...DEFAULTS }, timer: null, lastExport: null };
 let editingId = null;
@@ -48,6 +73,29 @@ const inRange = (s, from, to) => { const t = new Date(s.date); return t >= from 
 const daysSince = d => Math.floor((today0() - startOfDay(d)) / DAY);
 const sortSessions = () => state.sessions.sort((a, b) => b.date.localeCompare(a.date));
 
+// ---------- metodi e abilità ----------
+function guessSkill(name) {
+  const n = String(name).toLowerCase();
+  if (/(conver|parl|sprech|tandem|voce|voice|shadow|tutor|speak)/.test(n)) return 'parlato';
+  if (/(scri|schreib|gramm|diario|chat|writ)/.test(n)) return 'scrittura';
+  if (/(anki|lett|lesen|notiz|nachricht|libr|buch|read|news)/.test(n)) return 'lettura';
+  return 'ascolto';
+}
+
+function matchSkill(str) {
+  const s = String(str).trim().toLowerCase();
+  if (!s) return null;
+  return SKILL_KEYS.find(k => k.startsWith(s.slice(0, 4)) || SKILLS[k].de.toLowerCase().startsWith(s.slice(0, 4))) || null;
+}
+
+function normalizeMethods(list) {
+  return (list || []).map(m => typeof m === 'string' ? { name: m, skill: guessSkill(m) } : m)
+    .filter(m => m && m.name && SKILLS[m.skill]);
+}
+
+const methodSkill = name => state.settings.methods.find(m => m.name === name)?.skill || guessSkill(name);
+const skillOf = s => (SKILLS[s.skill] ? s.skill : methodSkill(s.method));
+
 // ---------- data ----------
 async function load() {
   const [sessions, checkpoints, settings, timer, lastExport] = await Promise.all([
@@ -58,16 +106,25 @@ async function load() {
   sortSessions();
   state.checkpoints = checkpoints.sort((a, b) => a.date.localeCompare(b.date));
   state.settings = { ...DEFAULTS, ...(settings || {}) };
+  state.settings.methods = normalizeMethods(state.settings.methods);
+  if (!state.settings.methods.length) state.settings.methods = DEFAULT_METHODS;
   state.timer = timer || null;
   state.lastExport = lastExport || null;
 }
 
+function snapshot() {
+  const byDay = minutesByDay();
+  return { hours: sumMin(state.sessions) / 60, streak: streakInfo(byDay).current, today: byDay.get(dayKey(new Date())) || 0 };
+}
+
 async function saveSession(s) {
+  const before = snapshot();
   await db.put('sessions', s);
   const i = state.sessions.findIndex(x => x.id === s.id);
   if (i >= 0) state.sessions[i] = s; else state.sessions.push(s);
   sortSessions();
   renderAll();
+  celebrate(before, snapshot());
 }
 
 async function deleteSession(id) {
@@ -83,22 +140,34 @@ function minutesByDay() {
   return m;
 }
 
-function currentStreak(byDay) {
-  let d = new Date(), n = 0;
-  if (!byDay.has(dayKey(d))) d = addDays(d, -1); // oggi non ancora fatto: la streak non è rotta
-  while (byDay.has(dayKey(d))) { n++; d = addDays(d, -1); }
-  return n;
-}
-
-function bestStreak(byDay) {
-  let best = 0, cur = 0, prev = null;
-  for (const k of [...byDay.keys()].sort()) {
-    const d = new Date(k + 'T12:00:00');
-    cur = prev && Math.round((d - prev) / DAY) === 1 ? cur + 1 : 1;
-    best = Math.max(best, cur);
-    prev = d;
+// Streak stile Duolingo: un giorno conta se raggiungi il minimo.
+// Ogni 7 giorni di streak guadagni un freeze (max 2); un giorno saltato consuma un freeze invece di azzerare.
+// Tutto è ricalcolato dallo storico, quindi modificare o cancellare sessioni resta coerente.
+function streakInfo(byDay) {
+  const min = state.settings.streakMin;
+  const t0 = today0();
+  const todayMin = byDay.get(dayKey(t0)) || 0;
+  const res = { current: 0, best: 0, freezes: 0, frozen: new Set(), todayDone: todayMin >= min };
+  if (!state.sessions.length) return res;
+  let cur = 0, freezes = 0;
+  for (let d = startOfDay(state.sessions[state.sessions.length - 1].date); d <= t0; d = addDays(d, 1)) {
+    const k = dayKey(d);
+    const ok = (byDay.get(k) || 0) >= min;
+    if (ok) {
+      cur++;
+      if (cur % 7 === 0) freezes = Math.min(MAX_FREEZE, freezes + 1);
+    } else if (d.getTime() === t0.getTime()) {
+      // oggi non ancora fatto: la giornata è ancora aperta
+    } else if (cur > 0 && freezes > 0) {
+      freezes--; res.frozen.add(k);
+    } else {
+      cur = 0;
+    }
+    res.best = Math.max(res.best, cur);
   }
-  return best;
+  res.current = cur;
+  res.freezes = freezes;
+  return res;
 }
 
 // minuti a settimana, media sulle ultime 4 settimane (o meno se hai iniziato da poco)
@@ -130,13 +199,20 @@ function goalInfo() {
 function methodStats() {
   const m = new Map();
   for (const s of state.sessions) {
-    if (!m.has(s.method)) m.set(s.method, { method: s.method, min: 0, n: 0, enj: 0, lrn: 0, last: null });
+    if (!m.has(s.method)) m.set(s.method, { method: s.method, skill: skillOf(s), min: 0, n: 0, enj: 0, lrn: 0, last: null });
     const o = m.get(s.method);
     o.min += s.minutes; o.n++; o.enj += s.enjoy || 0; o.lrn += s.learned || 0;
     const d = new Date(s.date);
     if (!o.last || d > o.last) o.last = d;
   }
   return [...m.values()].map(o => ({ ...o, avgEnj: o.enj / o.n, avgLrn: o.lrn / o.n })).sort((a, b) => b.min - a.min);
+}
+
+function skillStats(sessions = state.sessions) {
+  const o = Object.fromEntries(SKILL_KEYS.map(k => [k, { k, min: 0, n: 0, lrn: 0 }]));
+  for (const s of sessions) { const x = o[skillOf(s)]; x.min += s.minutes; x.n++; x.lrn += s.learned || 0; }
+  const total = sumMin(sessions) || 1;
+  return SKILL_KEYS.map(k => ({ ...o[k], share: o[k].min / total, avgLrn: o[k].n ? o[k].lrn / o[k].n : 0 }));
 }
 
 function timeOfDayStats() {
@@ -151,6 +227,13 @@ function timeOfDayStats() {
   return slots.map(s => ({ ...s, avgLrn: s.n ? s.lrn / s.n : 0 }));
 }
 
+const SKILL_TIPS = {
+  ascolto: 'prova Easy German o una serie con sottotitoli in tedesco',
+  lettura: 'prova un articolo di nachrichtenleicht.de al giorno',
+  scrittura: 'scrivi 5 frasi sulla tua giornata e falle correggere',
+  parlato: 'prova 10 minuti di voce con l\'AI o di shadowing',
+};
+
 function insights(ms, tod) {
   const out = [];
   const total = sumMin(state.sessions);
@@ -158,6 +241,14 @@ function insights(ms, tod) {
 
   const top = ms[0];
   out.push(`Passi più tempo su <b>${esc(top.method)}</b> (${Math.round(top.min / total * 100)}% del totale).`);
+
+  if (total >= 120) {
+    const sk = skillStats();
+    const weak = [...sk].sort((a, b) => a.share - b.share)[0];
+    if (weak.share < 0.12) {
+      out.push(`Stai trascurando <b>${SKILLS[weak.k].label.toLowerCase()}</b> (${Math.round(weak.share * 100)}% del tempo): ${SKILL_TIPS[weak.k]}.`);
+    }
+  }
 
   const rated = ms.filter(m => m.n >= 3);
   if (rated.length >= 2) {
@@ -204,19 +295,28 @@ function barsHTML(items, targetPerItem, valFmt) {
     </div>`).join('')}</div>`;
 }
 
-function heatmapHTML(byDay) {
+function heatmapHTML(byDay, frozen) {
   const weeks = 16;
   const start = addDays(startOfWeek(new Date()), -7 * (weeks - 1));
   const t0 = today0();
   let cells = '';
   for (let i = 0; i < weeks * 7; i++) {
     const d = addDays(start, i);
-    const min = byDay.get(dayKey(d)) || 0;
-    const lvl = d > t0 ? 'x' : min === 0 ? 0 : min < 15 ? 1 : min < 30 ? 2 : min < 60 ? 3 : 4;
-    cells += `<div class="hm l${lvl}" title="${dayKey(d)}: ${fmtDur(min)}"></div>`;
+    const k = dayKey(d);
+    const min = byDay.get(k) || 0;
+    const lvl = d > t0 ? 'x' : frozen.has(k) ? 'f' : min === 0 ? 0 : min < 15 ? 1 : min < 30 ? 2 : min < 60 ? 3 : 4;
+    cells += `<div class="hm l${lvl}" title="${k}: ${fmtDur(min)}"></div>`;
   }
   return `<div class="heatmap">${cells}</div>
-    <div class="hm-legend">meno <span class="hm l0"></span><span class="hm l1"></span><span class="hm l2"></span><span class="hm l3"></span><span class="hm l4"></span> più</div>`;
+    <div class="hm-legend"><span class="hm lf"></span> freeze &nbsp; meno <span class="hm l0"></span><span class="hm l1"></span><span class="hm l2"></span><span class="hm l3"></span><span class="hm l4"></span> più</div>`;
+}
+
+function ringHTML(value, goal) {
+  const r = 26, c = 2 * Math.PI * r, p = Math.min(1, value / goal);
+  return `<svg class="ring" viewBox="0 0 64 64" aria-hidden="true">
+    <circle cx="32" cy="32" r="${r}" class="ring-bg"/>
+    <circle cx="32" cy="32" r="${r}" class="ring-fg ${p >= 1 ? 'done' : ''}" stroke-dasharray="${c}" stroke-dashoffset="${c * (1 - p)}"/>
+  </svg>`;
 }
 
 function goalHTML() {
@@ -234,13 +334,65 @@ function goalHTML() {
     ${proj}`;
 }
 
+function skillBarsHTML(stats, showLearn) {
+  const max = Math.max(...stats.map(s => s.min), 1);
+  return `<div class="skills">${stats.map(s => `
+    <div class="skill">
+      <div class="skill-head"><span>${SKILLS[s.k].icon} <b>${SKILLS[s.k].label}</b> <span class="muted small">${SKILLS[s.k].de}</span></span>
+        <span class="muted small">${fmtDur(s.min)}${showLearn ? ` · ${Math.round(s.share * 100)}%` : ''}</span></div>
+      <div class="mbar sk-${s.k}"><div style="width:${s.min / max * 100}%"></div></div>
+      ${showLearn && s.n ? `<div class="muted small">Apprendimento percepito ${fmt1(s.avgLrn)}/5 · ${s.n} sess.</div>` : ''}
+    </div>`).join('')}</div>`;
+}
+
 const ratingHTML = (name, value) => [1, 2, 3, 4, 5].map(n =>
   `<label class="rate"><input type="radio" name="${name}" value="${n}" ${n === value ? 'checked' : ''} required><span>${n}</span></label>`).join('');
 
+const skillPickHTML = value => SKILL_KEYS.map(k =>
+  `<label class="rate"><input type="radio" name="skill" value="${k}" ${k === value ? 'checked' : ''} required><span>${SKILLS[k].icon}<br><small>${SKILLS[k].label}</small></span></label>`).join('');
+
 function methodOptions(selected) {
-  const list = [...state.settings.methods];
-  if (selected && !list.includes(selected)) list.push(selected);
-  return list.map(m => `<option ${m === selected ? 'selected' : ''}>${esc(m)}</option>`).join('');
+  const names = state.settings.methods.map(m => m.name);
+  if (selected && !names.includes(selected)) names.push(selected);
+  return names.map(n => `<option ${n === selected ? 'selected' : ''}>${esc(n)}</option>`).join('');
+}
+
+// ---------- toast / celebrazioni ----------
+let toastTimer;
+function toast(html) {
+  const el = $('#toast');
+  el.innerHTML = html;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3800);
+}
+
+function celebrate(before, after) {
+  const hourHit = HOUR_MILESTONES.filter(x => x > before.hours && x <= after.hours).pop();
+  const streakHit = STREAK_MILESTONES.filter(x => x > before.streak && x <= after.streak).pop();
+  const goal = state.settings.dailyGoal;
+  if (streakHit) toast(`🔥 <b>${streakHit} giorni di fila!</b><br>${streakHit % 7 === 0 ? 'Hai guadagnato un 🧊 freeze.' : 'Continua così.'}`);
+  else if (hourHit) toast(`🏅 <b>${hourHit} ore di tedesco!</b><br>Traguardo raggiunto.`);
+  else if (before.today < goal && after.today >= goal) toast(`✅ <b>Obiettivo di oggi raggiunto</b><br>${fmtDur(after.today)} su ${goal} min.`);
+  else if (after.streak > before.streak) toast(`🔥 <b>Streak: ${after.streak}</b><br>Oggi è al sicuro.`);
+}
+
+// ---------- badge sull'icona ----------
+function updateBadge(todayDone) {
+  try {
+    if (!('setAppBadge' in navigator) || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    if (todayDone) navigator.clearAppBadge(); else navigator.setAppBadge(1);
+  } catch { /* non supportato */ }
+}
+
+async function enableBadge() {
+  if (typeof Notification === 'undefined' || !('setAppBadge' in navigator)) {
+    alert("Il badge funziona solo con l'app installata sulla schermata Home (iOS 16.4+). Aprila dall'icona e riprova.");
+    return;
+  }
+  const p = await Notification.requestPermission();
+  if (p === 'granted') { renderAll(); toast('🔴 Badge attivo: lo vedi finché non fai il minimo di oggi.'); }
+  else alert('Permesso negato. Puoi riattivarlo da Impostazioni iOS → Notifiche.');
 }
 
 // ---------- render ----------
@@ -266,13 +418,42 @@ function renderToday() {
   const byDay = minutesByDay();
   const now = new Date();
   const ws = startOfWeek(now);
-  const wMin = sumMin(state.sessions.filter(s => inRange(s, ws, addDays(ws, 7))));
+  const weekSessions = state.sessions.filter(s => inRange(s, ws, addDays(ws, 7)));
+  const wMin = sumMin(weekSessions);
   const target = state.settings.weeklyTarget * 60;
+  const todayMin = byDay.get(dayKey(now)) || 0;
+  const st = streakInfo(byDay);
+  const { dailyGoal, streakMin } = state.settings;
 
-  $('#timer-method').innerHTML = methodOptions(state.timer?.method || state.settings.methods[0]);
+  // streak + obiettivo del giorno
+  let msg;
+  if (st.todayDone) msg = todayMin >= dailyGoal ? 'Oggi fatto e obiettivo raggiunto. 💪' : `Streak al sicuro. Altri ${fmtDur(dailyGoal - todayMin)} per l'obiettivo del giorno.`;
+  else if (st.current > 0) msg = `Fai almeno <b>${streakMin} min</b> oggi per tenere la streak${st.freezes ? ` (hai ${st.freezes} 🧊 di riserva)` : ''}.`;
+  else msg = `Inizia una nuova streak: bastano <b>${streakMin} min</b>.`;
+  const nextS = STREAK_MILESTONES.find(x => x > st.current);
+  const nextH = HOUR_MILESTONES.find(x => x > sumMin(state.sessions) / 60);
+  $('#streak-card').innerHTML = `
+    <div class="streak-top">
+      <div class="flame ${st.todayDone ? 'on' : ''}">🔥</div>
+      <div class="streak-num"><b>${st.current}</b><span>${st.current === 1 ? 'giorno' : 'giorni'} di fila</span></div>
+      <div class="freeze" title="Freeze: salvano la streak se salti un giorno">🧊 ${st.freezes}/${MAX_FREEZE}</div>
+      <div class="ring-wrap">${ringHTML(todayMin, dailyGoal)}<span>${Math.round(todayMin)}<small>/${dailyGoal}'</small></span></div>
+    </div>
+    <p class="streak-msg">${msg}</p>
+    <p class="muted small">Prossimi traguardi: 🔥 ${nextS} giorni · 🏅 ${nextH} h</p>`;
+
+  $('#timer-method').innerHTML = methodOptions(state.timer?.method || state.settings.methods[0].name);
+
+  // registrazione rapida: i 4 metodi più usati
+  const counts = new Map();
+  state.sessions.forEach(s => counts.set(s.method, (counts.get(s.method) || 0) + 1));
+  const quick = [...state.settings.methods].sort((a, b) => (counts.get(b.name) || 0) - (counts.get(a.name) || 0)).slice(0, 4);
+  $('#quick').innerHTML = `<div class="muted small">Registra al volo 15 min</div>
+    <div class="chips">${quick.map(m => `<button class="chip" data-method="${esc(m.name)}">${SKILLS[m.skill].icon} ${esc(m.name)}</button>`).join('')}</div>`;
+
   $('#today-kpis').innerHTML =
-    kpi('Oggi', fmtDur(byDay.get(dayKey(now)) || 0)) +
-    kpi('Streak', `${currentStreak(byDay)} gg`) +
+    kpi('Oggi', fmtDur(todayMin)) +
+    kpi('Record', `${st.best} gg`) +
     kpi('Settimana', `${fmtH(wMin)}<small>/${fmt1(state.settings.weeklyTarget)} h</small>`);
 
   $('#goal-card').innerHTML = goalHTML();
@@ -283,7 +464,9 @@ function renderToday() {
   });
   $('#week-card').innerHTML = `<h2>Questa settimana</h2>
     ${barsHTML(days, target / 7, m => Math.round(m) + "'")}
-    <p class="muted">${wMin >= target ? 'Target settimanale raggiunto 🎉' : `Mancano ${fmtDur(target - wMin)} al target.`}</p>`;
+    <p class="muted">${wMin >= target ? 'Target settimanale raggiunto 🎉' : `Mancano ${fmtDur(target - wMin)} al target.`}</p>
+    <h2 style="margin-top:14px">Abilità della settimana</h2>
+    ${skillBarsHTML(skillStats(weekSessions), false)}`;
 
   const banners = [];
   const lastCp = state.checkpoints.at(-1);
@@ -295,6 +478,7 @@ function renderToday() {
   }
   $('#banners').innerHTML = banners.join('');
   renderTimer();
+  updateBadge(st.todayDone);
 }
 
 function renderStats() {
@@ -304,6 +488,7 @@ function renderStats() {
     return;
   }
   const byDay = minutesByDay();
+  const st = streakInfo(byDay);
   const total = sumMin(state.sessions);
   const ms = methodStats();
   const tod = timeOfDayStats();
@@ -321,22 +506,25 @@ function renderStats() {
       ${kpi('Media sess.', fmtDur(total / state.sessions.length))}
     </div>
     <div class="kpis">
-      ${kpi('Streak', `${currentStreak(byDay)} gg`)}
-      ${kpi('Record', `${bestStreak(byDay)} gg`)}
+      ${kpi('Streak', `${st.current} gg`)}
+      ${kpi('Record', `${st.best} gg`)}
       ${kpi('Ritmo', `${fmt1(weeklyPace() / 60)}<small> h/sett</small>`)}
     </div>
 
     <div class="card"><h2>Cosa dicono i dati</h2><ul class="insights">${insights(ms, tod).map(i => `<li>${i}</li>`).join('')}</ul></div>
 
+    <div class="card"><h2>Le 4 abilità</h2>${skillBarsHTML(skillStats(), true)}
+      <p class="muted small">Per conversare servono tutte e quattro: se una resta sotto il 10–15% del tempo, è lì che si crea il buco.</p></div>
+
     <div class="card"><h2>Ultime 8 settimane</h2>${barsHTML(weeks, state.settings.weeklyTarget * 60, m => fmtH(m))}
       <p class="muted small">La linea tratteggiata è il target settimanale.</p></div>
 
-    <div class="card"><h2>Costanza · 16 settimane</h2>${heatmapHTML(byDay)}</div>
+    <div class="card"><h2>Costanza · 16 settimane</h2>${heatmapHTML(byDay, st.frozen)}</div>
 
     <div class="card"><h2>Metodi</h2>
       <div class="methods">${ms.map(m => `
         <div class="method">
-          <div class="method-head"><b>${esc(m.method)}</b><span>${fmtH(m.min)} h · ${m.n} sess.</span></div>
+          <div class="method-head"><b>${SKILLS[m.skill].icon} ${esc(m.method)}</b><span>${fmtH(m.min)} h · ${m.n} sess.</span></div>
           <div class="mbar"><div style="width:${m.min / maxM * 100}%"></div></div>
           <div class="method-scores"><span>Piacere <b>${fmt1(m.avgEnj)}</b></span><span>Apprendimento <b>${fmt1(m.avgLrn)}</b></span><span class="muted">ultima: ${daysSince(m.last) === 0 ? 'oggi' : daysSince(m.last) + ' gg fa'}</span></div>
         </div>`).join('')}</div>
@@ -380,7 +568,7 @@ function renderHistory() {
       <div class="day-head"><span>${fmtDayLong(new Date(k + 'T12:00:00'))}</span><span>${fmtDur(sumMin(list))}</span></div>
       ${list.map(s => `
         <button class="sess" data-id="${s.id}">
-          <div class="sess-main"><b>${esc(s.method)}</b><span>${fmtTime(new Date(s.date))} · ${fmtDur(s.minutes)}</span></div>
+          <div class="sess-main"><b>${SKILLS[skillOf(s)].icon} ${esc(s.method)}</b><span>${fmtTime(new Date(s.date))} · ${fmtDur(s.minutes)}</span></div>
           <div class="sess-sub"><span>Piacere ${s.enjoy}/5 · Appr. ${s.learned}/5</span>${s.note ? `<span class="note">${esc(s.note)}</span>` : ''}</div>
         </button>`).join('')}
     </div>`).join('');
@@ -391,10 +579,15 @@ function renderSettings() {
   f.goalLabel.value = state.settings.goalLabel;
   f.goalHours.value = state.settings.goalHours;
   f.weeklyTarget.value = state.settings.weeklyTarget;
-  f.methods.value = state.settings.methods.join('\n');
+  f.dailyGoal.value = state.settings.dailyGoal;
+  f.streakMin.value = state.settings.streakMin;
+  f.methods.value = state.settings.methods.map(m => `${m.name} = ${SKILLS[m.skill].label.toLowerCase()}`).join('\n');
   $('#backup-info').textContent = state.lastExport
     ? `Ultimo backup: ${fmtDate(new Date(state.lastExport))}. I dati vivono solo su questo dispositivo.`
     : 'Nessun backup ancora. I dati vivono solo su questo dispositivo: esportali ogni tanto in File o iCloud Drive.';
+  const granted = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  $('#btn-badge').textContent = granted ? 'Badge attivo ✓' : "Attiva badge sull'icona";
+  $('#btn-badge').disabled = granted;
   $('#version').textContent = `Deutsch Tracker v${APP_VERSION} · ${state.sessions.length} sessioni`;
 }
 
@@ -429,10 +622,13 @@ async function timerAction(act) {
 function openSessionDialog(s = {}, isEdit = false) {
   editingId = isEdit ? s.id : null;
   const f = $('#session-form');
+  const method = s.method || $('#timer-method').value;
   $('#session-title').textContent = isEdit ? 'Modifica sessione' : 'Nuova sessione';
-  $('#f-method').innerHTML = methodOptions(s.method || $('#timer-method').value);
-  f.date.value = toLocalInput(s.date || new Date(Date.now() - 30 * 60000));
-  f.minutes.value = s.minutes || 30;
+  $('#f-method').innerHTML = methodOptions(method);
+  $('#f-skill').innerHTML = skillPickHTML(isEdit ? skillOf(s) : methodSkill(method));
+  const minutes = s.minutes || 30;
+  f.date.value = toLocalInput(s.date || new Date(Date.now() - minutes * 60000));
+  f.minutes.value = minutes;
   $('#f-enjoy').innerHTML = ratingHTML('enjoy', s.enjoy || 3);
   $('#f-learned').innerHTML = ratingHTML('learned', s.learned || 3);
   f.note.value = s.note || '';
@@ -448,6 +644,7 @@ async function submitSession(e) {
   await saveSession({
     id: editingId || uid(),
     method: f.method.value,
+    skill: f.skill.value,
     date: new Date(f.date.value).toISOString(),
     minutes,
     enjoy: parseInt(f.enjoy.value, 10),
@@ -542,6 +739,10 @@ async function init() {
   $('#timer-buttons').addEventListener('click', e => { const a = e.target.closest('[data-act]'); if (a) timerAction(a.dataset.act); });
   $('#timer-method').addEventListener('change', e => { if (state.timer) setTimer({ ...state.timer, method: e.target.value }); });
   $('#btn-manual').addEventListener('click', () => openSessionDialog());
+  $('#quick').addEventListener('click', e => {
+    const c = e.target.closest('[data-method]');
+    if (c) openSessionDialog({ method: c.dataset.method, minutes: 15 });
+  });
   $('#banners').addEventListener('click', e => {
     const a = e.target.closest('[data-act]');
     if (a?.dataset.act === 'checkpoint') openCheckpoint();
@@ -549,6 +750,7 @@ async function init() {
   });
 
   $('#session-form').addEventListener('submit', submitSession);
+  $('#f-method').addEventListener('change', e => { $('#f-skill').innerHTML = skillPickHTML(methodSkill(e.target.value)); });
   $('#f-cancel').addEventListener('click', () => $('#session-dialog').close());
   $('#f-delete').addEventListener('click', async () => {
     if (editingId && confirm('Eliminare questa sessione?')) { await deleteSession(editingId); $('#session-dialog').close(); }
@@ -561,15 +763,26 @@ async function init() {
   $('#checkpoint-form').addEventListener('submit', submitCheckpoint);
   $('#cp-cancel').addEventListener('click', () => $('#checkpoint-dialog').close());
   $('#btn-checkpoint').addEventListener('click', openCheckpoint);
+  $('#btn-badge').addEventListener('click', enableBadge);
 
   $('#settings-form').addEventListener('submit', async e => {
     e.preventDefault();
     const f = e.target;
-    const methods = [...new Set(f.methods.value.split('\n').map(s => s.trim()).filter(Boolean))];
+    const seen = new Set();
+    const methods = f.methods.value.split('\n').map(line => {
+      const [name, skill] = line.split('=');
+      const n = (name || '').trim();
+      if (!n || seen.has(n)) return null;
+      seen.add(n);
+      return { name: n, skill: matchSkill(skill || '') || guessSkill(n) };
+    }).filter(Boolean);
+    const num = (v, d) => { const x = parseFloat(String(v).replace(',', '.')); return x > 0 ? x : d; };
     state.settings = {
       goalLabel: f.goalLabel.value.trim() || 'B1',
-      goalHours: Math.max(1, parseInt(f.goalHours.value, 10) || DEFAULTS.goalHours),
-      weeklyTarget: Math.max(0.5, parseFloat(String(f.weeklyTarget.value).replace(',', '.')) || DEFAULTS.weeklyTarget),
+      goalHours: Math.round(num(f.goalHours.value, DEFAULTS.goalHours)),
+      weeklyTarget: num(f.weeklyTarget.value, DEFAULTS.weeklyTarget),
+      dailyGoal: Math.round(num(f.dailyGoal.value, DEFAULTS.dailyGoal)),
+      streakMin: Math.round(num(f.streakMin.value, DEFAULTS.streakMin)),
       methods: methods.length ? methods : DEFAULT_METHODS,
     };
     await db.setSetting('settings', state.settings);

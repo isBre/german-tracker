@@ -189,3 +189,49 @@ dialog h2 { margin: 0 0 14px; font-size: 20px; }
 .actions { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .spacer { flex: 1; }
 [hidden] { display: none !important; }
+
+/* streak stile Duolingo */
+.streak-top { display: flex; align-items: center; gap: 12px; }
+.flame { font-size: 40px; line-height: 1; filter: grayscale(1) opacity(.45); transition: filter .3s; }
+.flame.on { filter: none; }
+.streak-num b { display: block; font-size: 34px; line-height: 1; font-variant-numeric: tabular-nums; }
+.streak-num span { font-size: 13px; color: var(--muted); }
+.freeze { margin-left: auto; font-size: 14px; font-weight: 600; background: var(--card2); border-radius: 99px; padding: 6px 10px; white-space: nowrap; }
+.ring-wrap { position: relative; width: 64px; height: 64px; flex: none; }
+.ring-wrap span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 15px; }
+.ring-wrap small { font-size: 10px; color: var(--muted); font-weight: 500; }
+.ring { width: 64px; height: 64px; transform: rotate(-90deg); }
+.ring circle { fill: none; stroke-width: 7; }
+.ring-bg { stroke: var(--card2); }
+.ring-fg { stroke: var(--accent); stroke-linecap: round; transition: stroke-dashoffset .5s; }
+.ring-fg.done { stroke: var(--ok); }
+.streak-msg { margin: 12px 0 2px !important; }
+
+/* registrazione rapida */
+.quick { margin-top: 14px; text-align: left; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { border: 1px solid var(--line); background: var(--card2); border-radius: 99px; padding: 7px 12px; font-size: 14px; cursor: pointer; color: var(--text); }
+.chip:active { transform: scale(.96); }
+
+/* 4 abilità */
+.skills { display: grid; gap: 10px; }
+.skill-head { display: flex; justify-content: space-between; gap: 8px; font-size: 15px; }
+.sk-ascolto div   { background: #5b9cf5; }
+.sk-lettura div   { background: #4cc38a; }
+.sk-scrittura div { background: #c58af0; }
+.sk-parlato div   { background: #f08a5b; }
+.skillpick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.skillpick .rate span { font-size: 20px; line-height: 1.2; padding: 8px 0; }
+.skillpick .rate small { font-size: 11px; font-weight: 500; }
+
+/* heatmap: giorni salvati da un freeze */
+.hm.lf { background: #5b9cf5; opacity: .7; }
+
+/* toast */
+#toast {
+  position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top)); transform: translate(-50%, -150%);
+  background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 16px;
+  padding: 12px 18px; box-shadow: 0 10px 30px rgba(0,0,0,.35); z-index: 100; text-align: center;
+  transition: transform .35s cubic-bezier(.2,.9,.3,1.2); max-width: calc(100% - 32px); font-size: 15px;
+}
+#toast.show { transform: translate(-50%, 0); }
