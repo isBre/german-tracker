@@ -1,36 +1,50 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Deutsch Tracker
 
-## Getting Started
+PWA per tracciare le ore di tedesco, i metodi che funzionano e la costanza verso il B1.
+HTML/CSS/JS vanilla, nessun build step. I dati restano sul telefono (IndexedDB).
 
-First, run the development server:
+## Pubblicare su GitHub Pages
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cd german-tracker
+git init && git add . && git commit -m "Deutsch Tracker v1"
+git branch -M main
+git remote add origin git@github.com:isBre/german-tracker.git
+git push -u origin main
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Poi su GitHub: **Settings → Pages → Deploy from a branch → main / (root)**.
+Dopo un minuto l'app è su `https://isbre.github.io/german-tracker/`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Installare sull'iPhone
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Apri il link in **Safari** (non Chrome: su iOS solo Safari installa le PWA).
+2. **Condividi → Aggiungi alla schermata Home**.
+3. Aprila sempre dall'icona: i dati sono legati all'app installata, non alla scheda di Safari.
 
-## Learn More
+## Provarla in locale
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+python3 -m http.server 8000   # poi apri http://localhost:8000
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Struttura
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| File | Cosa fa |
+|---|---|
+| `index.html` | Layout: 4 tab (Oggi, Statistiche, Storico, Impostazioni) + dialog |
+| `app.js` | Logica, calcoli (streak, proiezione, statistiche per metodo), render |
+| `db.js` | Storage layer su IndexedDB. Per passare a un backend (es. Supabase) si cambia solo questo file |
+| `style.css` | Stile, dark/light automatico |
+| `sw.js` | Service worker per l'uso offline (network-first) |
+| `manifest.json` | Metadati PWA |
 
-## Deploy on Vercel
+## Aggiornamenti
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Fai push e riapri l'app: il service worker scarica la nuova versione quando sei online.
+Se aggiungi file nuovi, aggiungili alla lista `ASSETS` in `sw.js` e aumenta `CACHE` (es. `dt-v2`).
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Backup
+
+Impostazioni → **Esporta backup** salva un JSON (in File o iCloud Drive).
+**Importa backup** lo ripristina. L'app ti ricorda di farlo ogni 2 settimane.

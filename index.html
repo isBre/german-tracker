@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Deutsch">
+  <meta name="theme-color" content="#111318">
+  <title>Deutsch Tracker</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top"><h1 id="title">Oggi</h1></header>
+
+  <main>
+    <!-- OGGI -->
+    <section id="view-today" class="view active">
+      <div class="card timer-card">
+        <div id="timer-display" class="timer">00:00:00</div>
+        <select id="timer-method" aria-label="Metodo"></select>
+        <div class="row" id="timer-buttons"></div>
+        <button class="link" id="btn-manual" type="button">+ Aggiungi sessione manualmente</button>
+      </div>
+      <div id="banners"></div>
+      <div class="kpis" id="today-kpis"></div>
+      <div class="card" id="goal-card"></div>
+      <div class="card" id="week-card"></div>
+    </section>
+
+    <!-- STATISTICHE -->
+    <section id="view-stats" class="view"><div id="stats"></div></section>
+
+    <!-- STORICO -->
+    <section id="view-history" class="view"><div id="history"></div></section>
+
+    <!-- IMPOSTAZIONI -->
+    <section id="view-settings" class="view">
+      <form class="card" id="settings-form">
+        <h2>Obiettivo</h2>
+        <div class="row2">
+          <label>Livello<input name="goalLabel" maxlength="12" required></label>
+          <label>Ore necessarie<input name="goalHours" type="number" min="1" step="1" inputmode="numeric" required></label>
+        </div>
+        <label>Target settimanale (ore)<input name="weeklyTarget" type="number" min="0.5" step="0.5" inputmode="decimal" required></label>
+        <label>Metodi (uno per riga)<textarea name="methods" rows="7"></textarea></label>
+        <button class="btn primary" type="submit">Salva</button>
+      </form>
+
+      <div class="card">
+        <h2>Checkpoint</h2>
+        <p class="muted">Autovalutazione mensile: misura i progressi reali, non solo le ore.</p>
+        <button class="btn" type="button" id="btn-checkpoint">Fai il checkpoint adesso</button>
+      </div>
+
+      <div class="card">
+        <h2>Dati</h2>
+        <p class="muted" id="backup-info"></p>
+        <div class="row wrap">
+          <button class="btn primary" type="button" id="btn-export">Esporta backup</button>
+          <label class="btn" for="import-file">Importa backup</label>
+          <input type="file" id="import-file" accept="application/json,.json" hidden>
+        </div>
+        <button class="btn danger ghost" type="button" id="btn-wipe">Cancella tutti i dati</button>
+      </div>
+      <p class="muted center small" id="version"></p>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button data-view="today" class="active"><span class="ico">⏱</span>Oggi</button>
+    <button data-view="stats"><span class="ico">▤</span>Statistiche</button>
+    <button data-view="history"><span class="ico">☰</span>Storico</button>
+    <button data-view="settings"><span class="ico">⚙</span>Impostazioni</button>
+  </nav>
+
+  <!-- Dialog sessione -->
+  <dialog id="session-dialog">
+    <form id="session-form">
+      <h2 id="session-title">Nuova sessione</h2>
+      <label>Metodo<select name="method" id="f-method"></select></label>
+      <div class="row2">
+        <label>Quando<input type="datetime-local" name="date" required></label>
+        <label>Minuti<input type="number" name="minutes" min="1" max="720" inputmode="numeric" required></label>
+      </div>
+      <fieldset><legend>Quanto ti è piaciuta?</legend><div class="rating" id="f-enjoy"></div></fieldset>
+      <fieldset><legend>Quanto ti sembra di aver imparato?</legend><div class="rating" id="f-learned"></div></fieldset>
+      <label>Note<textarea name="note" rows="2" placeholder="Cosa hai fatto, cosa ha funzionato…"></textarea></label>
+      <div class="actions">
+        <button type="button" class="btn danger ghost" id="f-delete">Elimina</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="f-cancel">Annulla</button>
+        <button type="submit" class="btn primary">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Dialog checkpoint -->
+  <dialog id="checkpoint-dialog">
+    <form id="checkpoint-form">
+      <h2>Checkpoint</h2>
+      <p class="muted small">1 = per niente · 3 = a fatica · 5 = senza problemi</p>
+      <div id="cp-questions"></div>
+      <label>Note<textarea name="note" rows="2" placeholder="Com'è andato il mese?"></textarea></label>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="cp-cancel">Annulla</button>
+        <button type="submit" class="btn primary">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
