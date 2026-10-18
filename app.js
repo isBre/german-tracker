@@ -1,6 +1,6 @@
 import { db } from './db.js';
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 // ---------- le 4 abilità ----------
 const SKILLS = {
@@ -12,20 +12,9 @@ const SKILLS = {
 const SKILL_KEYS = Object.keys(SKILLS);
 
 const DEFAULT_METHODS = [
-  { name: 'Duolingo', skills: ['ascolto', 'lettura', 'scrittura'] },
-  { name: 'Anki', skills: ['lettura'] },
-  { name: 'Nicos Weg', skills: ['ascolto', 'lettura'] },
-  { name: 'Easy German', skills: ['ascolto'] },
-  { name: 'Serie / Film', skills: ['ascolto'] },
-  { name: 'Podcast', skills: ['ascolto'] },
-  { name: 'Notizie / Lettura', skills: ['lettura'] },
-  { name: 'Grammatica', skills: ['scrittura'] },
-  { name: 'Diario / Scrittura', skills: ['scrittura'] },
-  { name: 'Chat con AI', skills: ['scrittura', 'lettura'] },
-  { name: 'Conversazione', skills: ['parlato', 'ascolto'] },
-  { name: 'Voce con AI', skills: ['parlato', 'ascolto'] },
-  { name: 'Shadowing', skills: ['parlato', 'ascolto'] },
-];
+  'Duolingo', 'Anki', 'Nicos Weg', 'Easy German', 'Serie / Film', 'Podcast', 'Notizie / Lettura',
+  'Grammatica', 'Diario / Scrittura', 'Chat con AI', 'Conversazione', 'Voce con AI', 'Shadowing',
+].map(name => ({ name }));
 
 const CHECK_QUESTIONS = [
   'Capisco un video di Easy German senza sottotitoli',
@@ -83,33 +72,19 @@ function guessSkill(name) {
   return 'ascolto';
 }
 
-function matchSkill(str) {
-  const s = String(str).trim().toLowerCase();
-  if (!s) return null;
-  return SKILL_KEYS.find(k => k.startsWith(s.slice(0, 4)) || SKILLS[k].de.toLowerCase().startsWith(s.slice(0, 4))) || null;
-}
-
-// "ascolto, lettura" -> ['ascolto', 'lettura'] (ordine fisso, niente doppioni)
-function parseSkills(str) {
-  const found = new Set(String(str || '').split(/[,+/]/).map(matchSkill).filter(Boolean));
-  return SKILL_KEYS.filter(k => found.has(k));
-}
-
 const cleanSkills = arr => SKILL_KEYS.filter(k => (arr || []).includes(k));
 
+// i metodi sono solo nomi: le abilità si scelgono a ogni sessione
 function normalizeMethods(list) {
-  return (list || []).map(m => {
-    if (typeof m === 'string') return { name: m, skills: [guessSkill(m)] };
-    const skills = cleanSkills(m.skills || (m.skill ? [m.skill] : []));
-    return { name: m.name, skills: skills.length ? skills : [guessSkill(m.name)] };
-  }).filter(m => m.name);
+  const seen = new Set();
+  return (list || []).map(m => ({ name: String(typeof m === 'string' ? m : m?.name || '').split('=')[0].trim() }))
+    .filter(m => m.name && !seen.has(m.name) && seen.add(m.name));
 }
 
-const methodSkills = name => state.settings.methods.find(m => m.name === name)?.skills || [guessSkill(name)];
-// abilità di una sessione: quelle salvate (nuovo formato o vecchio campo singolo), altrimenti quelle del metodo
+// abilità di una sessione; le sessioni vecchie senza abilità salvate ricadono su una stima dal nome del metodo
 function skillsOf(s) {
   const own = cleanSkills(s.skills || (s.skill ? [s.skill] : []));
-  return own.length ? own : methodSkills(s.method);
+  return own.length ? own : [guessSkill(s.method)];
 }
 const skillIcons = skills => skills.map(k => SKILLS[k].icon).join('');
 
@@ -216,13 +191,14 @@ function goalInfo() {
 function methodStats() {
   const m = new Map();
   for (const s of state.sessions) {
-    if (!m.has(s.method)) m.set(s.method, { method: s.method, skills: skillsOf(s), min: 0, n: 0, enj: 0, lrn: 0, last: null });
+    if (!m.has(s.method)) m.set(s.method, { method: s.method, skillSet: new Set(), min: 0, n: 0, enj: 0, lrn: 0, last: null });
     const o = m.get(s.method);
     o.min += s.minutes; o.n++; o.enj += s.enjoy || 0; o.lrn += s.learned || 0;
+    skillsOf(s).forEach(k => o.skillSet.add(k));
     const d = new Date(s.date);
     if (!o.last || d > o.last) o.last = d;
   }
-  return [...m.values()].map(o => ({ ...o, avgEnj: o.enj / o.n, avgLrn: o.lrn / o.n })).sort((a, b) => b.min - a.min);
+  return [...m.values()].map(o => ({ ...o, skills: cleanSkills([...o.skillSet]), avgEnj: o.enj / o.n, avgLrn: o.lrn / o.n })).sort((a, b) => b.min - a.min);
 }
 
 function skillStats(sessions = state.sessions) {
@@ -469,7 +445,7 @@ function renderToday() {
   state.sessions.forEach(s => counts.set(s.method, (counts.get(s.method) || 0) + 1));
   const quick = [...state.settings.methods].sort((a, b) => (counts.get(b.name) || 0) - (counts.get(a.name) || 0)).slice(0, 4);
   $('#quick').innerHTML = `<div class="muted small">Registra al volo 15 min</div>
-    <div class="chips">${quick.map(m => `<button class="chip" data-method="${esc(m.name)}">${skillIcons(m.skills)} ${esc(m.name)}</button>`).join('')}</div>`;
+    <div class="chips">${quick.map(m => `<button class="chip" data-method="${esc(m.name)}">${esc(m.name)}</button>`).join('')}</div>`;
 
   $('#today-kpis').innerHTML =
     kpi('Oggi', fmtDur(todayMin)) +
@@ -601,7 +577,7 @@ function renderSettings() {
   f.weeklyTarget.value = state.settings.weeklyTarget;
   f.dailyGoal.value = state.settings.dailyGoal;
   f.streakMin.value = state.settings.streakMin;
-  f.methods.value = state.settings.methods.map(m => `${m.name} = ${m.skills.map(k => SKILLS[k].label.toLowerCase()).join(', ')}`).join('\n');
+  f.methods.value = state.settings.methods.map(m => m.name).join('\n');
   $('#backup-info').textContent = state.lastExport
     ? `Ultimo backup: ${fmtDate(new Date(state.lastExport))}. I dati vivono solo su questo dispositivo.`
     : 'Nessun backup ancora. I dati vivono solo su questo dispositivo: esportali ogni tanto in File o iCloud Drive.';
@@ -645,7 +621,7 @@ function openSessionDialog(s = {}, isEdit = false) {
   const method = s.method || $('#timer-method').value;
   $('#session-title').textContent = isEdit ? 'Modifica sessione' : 'Nuova sessione';
   $('#f-method').innerHTML = methodOptions(method);
-  $('#f-skill').innerHTML = skillPickHTML(isEdit ? skillsOf(s) : methodSkills(method));
+  $('#f-skill').innerHTML = skillPickHTML(isEdit ? skillsOf(s) : []);
   const minutes = s.minutes || 30;
   f.date.value = toLocalInput(s.date || new Date(Date.now() - minutes * 60000));
   f.minutes.value = minutes;
@@ -773,7 +749,6 @@ async function init() {
   });
 
   $('#session-form').addEventListener('submit', submitSession);
-  $('#f-method').addEventListener('change', e => { $('#f-skill').innerHTML = skillPickHTML(methodSkills(e.target.value)); });
   $('#f-cancel').addEventListener('click', () => $('#session-dialog').close());
   $('#f-delete').addEventListener('click', async () => {
     if (editingId && confirm('Eliminare questa sessione?')) { await deleteSession(editingId); $('#session-dialog').close(); }
@@ -791,15 +766,7 @@ async function init() {
   $('#settings-form').addEventListener('submit', async e => {
     e.preventDefault();
     const f = e.target;
-    const seen = new Set();
-    const methods = f.methods.value.split('\n').map(line => {
-      const [name, skillStr] = line.split('=');
-      const n = (name || '').trim();
-      if (!n || seen.has(n)) return null;
-      seen.add(n);
-      const skills = parseSkills(skillStr);
-      return { name: n, skills: skills.length ? skills : [guessSkill(n)] };
-    }).filter(Boolean);
+    const methods = normalizeMethods(f.methods.value.split('\n'));
     const num = (v, d) => { const x = parseFloat(String(v).replace(',', '.')); return x > 0 ? x : d; };
     state.settings = {
       goalLabel: f.goalLabel.value.trim() || 'B1',

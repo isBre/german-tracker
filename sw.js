@@ -1,8 +1,8 @@
 // Service worker: rende l'app disponibile offline.
 // Strategia network-first: online scarica sempre l'ultima versione (così i tuoi push
 // arrivano subito), offline usa la copia in cache.
-// Se cambi la lista dei file, aumenta CACHE (es. 'dt-v3').
-const CACHE = 'dt-v3';
+// Se cambi la lista dei file, aumenta CACHE (es. 'dt-v4').
+const CACHE = 'dt-v4';
 const ASSETS = [
   './', './index.html', './style.css', './app.js', './db.js', './manifest.json',
   './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png',
